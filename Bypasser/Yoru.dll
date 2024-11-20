@@ -1,0 +1,108 @@
+#include <windows.h>
+#include <iostream>
+
+typedef int(WINAPI* MessageBoxW_t)(HWND, LPCWSTR, LPCWSTR, UINT);
+typedef BOOL(WINAPI* CreateFileW_t)(LPCWSTR, DWORD, DWORD, LPSECURITY_ATTRIBUTES, DWORD, DWORD, HANDLE);
+typedef BOOL(WINAPI* ReadFile_t)(HANDLE, LPVOID, DWORD, LPDWORD, LPOVERLAPPED);
+typedef BOOL(WINAPI* WriteFile_t)(HANDLE, LPCVOID, DWORD, LPDWORD, LPOVERLAPPED);
+typedef int(WINAPI* GetMessage_t)(LPMSG, HWND, UINT, UINT);
+typedef BOOL(WINAPI* SetWindowsHookExW_t)(int, HOOKPROC, HINSTANCE, DWORD);
+typedef BOOL(WINAPI* UnhookWindowsHookEx_t)(HHOOK);
+
+MessageBoxW_t pMessageBoxW = nullptr;
+CreateFileW_t pCreateFileW = nullptr;
+ReadFile_t pReadFile = nullptr;
+WriteFile_t pWriteFile = nullptr;
+GetMessage_t pGetMessage = nullptr;
+SetWindowsHookExW_t pSetWindowsHookExW = nullptr;
+UnhookWindowsHookEx_t pUnhookWindowsHookEx = nullptr;
+
+HHOOK hHook = nullptr;
+
+int WINAPI MyMessageBoxW(HWND hwnd, LPCWSTR lpText, LPCWSTR lpCaption, UINT uType) {
+    std::wcout << L"Working Bypass" << std::endl;
+    return pMessageBoxW(hwnd, lpText, lpCaption, uType);
+}
+
+BOOL WINAPI MyCreateFileW(LPCWSTR lpFileName, DWORD dwDesiredAccess, DWORD dwShareMode, LPSECURITY_ATTRIBUTES lpSecurityAttributes,
+                          DWORD dwCreationDisposition, DWORD dwFlagsAndAttributes, HANDLE hTemplateFile) {
+    std::wcout << L"Attempting to create a file: " << lpFileName << std::endl;
+    return pCreateFileW(lpFileName, dwDesiredAccess, dwShareMode, lpSecurityAttributes, dwCreationDisposition, dwFlagsAndAttributes, hTemplateFile);
+}
+
+BOOL WINAPI MyReadFile(HANDLE hFile, LPVOID lpBuffer, DWORD nNumberOfBytesToRead, LPDWORD lpNumberOfBytesRead, LPOVERLAPPED lpOverlapped) {
+    std::wcout << L"Reading from file: " << hFile << std::endl;
+    return pReadFile(hFile, lpBuffer, nNumberOfBytesToRead, lpNumberOfBytesRead, lpOverlapped);
+}
+
+BOOL WINAPI MyWriteFile(HANDLE hFile, LPCVOID lpBuffer, DWORD nNumberOfBytesToWrite, LPDWORD lpNumberOfBytesWritten, LPOVERLAPPED lpOverlapped) {
+    std::wcout << L"Writing to file: " << hFile << std::endl;
+    return pWriteFile(hFile, lpBuffer, nNumberOfBytesToWrite, lpNumberOfBytesWritten, lpOverlapped);
+}
+
+int WINAPI MyGetMessage(LPMSG lpMsg, HWND hWnd, UINT wMsgFilterMin, UINT wMsgFilterMax) {
+    std::wcout << L"Getting message" << std::endl;
+    return pGetMessage(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax);
+}
+
+LRESULT CALLBACK MyKeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
+    if (nCode == HC_ACTION) {
+        KBDLLHOOKSTRUCT* pKbd = (KBDLLHOOKSTRUCT*)lParam;
+        std::wcout << L"Key pressed: " << pKbd->vkCode << std::endl;
+    }
+    return CallNextHookEx(hHook, nCode, wParam, lParam);
+}
+
+BOOL APIENTRY DllMain(HMODULE hModule, DWORD  ul_reason_for_call, LPVOID lpReserved) {
+    if (ul_reason_for_call == DLL_PROCESS_ATTACH) {
+        HMODULE hKernel32 = GetModuleHandle(L"kernel32.dll");
+        HMODULE hUser32 = GetModuleHandle(L"user32.dll");
+
+        if (hKernel32) {
+            pCreateFileW = (CreateFileW_t)GetProcAddress(hKernel32, "CreateFileW");
+            pReadFile = (ReadFile_t)GetProcAddress(hKernel32, "ReadFile");
+            pWriteFile = (WriteFile_t)GetProcAddress(hKernel32, "WriteFile");
+        }
+
+        if (hUser32) {
+            pMessageBoxW = (MessageBoxW_t)GetProcAddress(hUser32, "MessageBoxW");
+            pGetMessage = (GetMessage_t)GetProcAddress(hUser32, "GetMessageW");
+            pSetWindowsHookExW = (SetWindowsHookExW_t)GetProcAddress(hUser32, "SetWindowsHookExW");
+            pUnhookWindowsHookEx = (UnhookWindowsHookEx_t)GetProcAddress(hUser32, "UnhookWindowsHookEx");
+        }
+
+        if (pMessageBoxW) {
+            pMessageBoxW = (MessageBoxW_t)MyMessageBoxW;
+        }
+
+        if (pCreateFileW) {
+            pCreateFileW = (CreateFileW_t)MyCreateFileW;
+        }
+
+        if (pReadFile) {
+            pReadFile = (ReadFile_t)MyReadFile;
+        }
+
+        if (pWriteFile) {
+            pWriteFile = (WriteFile_t)MyWriteFile;
+        }
+
+        if (pGetMessage) {
+            pGetMessage = (GetMessage_t)MyGetMessage;
+        }
+
+        if (pSetWindowsHookExW) {
+            hHook = pSetWindowsHookExW(WH_KEYBOARD_LL, MyKeyboardProc, hModule, 0);
+        }
+
+        std::wcout << L"Hook set and DLL loaded!" << std::endl;
+        Sleep(5000);
+
+        if (pUnhookWindowsHookEx) {
+            pUnhookWindowsHookEx(hHook);
+        }
+
+        std::wcout << L"Unhooking and exiting DLL" << std::endl;
+    }
+    return TRUE;
+}
